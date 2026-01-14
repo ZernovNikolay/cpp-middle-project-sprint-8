@@ -9,10 +9,10 @@
 #include "clang/Tooling/Tooling.h"
 #include "llvm/Support/CommandLine.h"
 
-#include <unordered_set>
-#include <string_view>
-#include <vector>
 #include <algorithm>
+#include <string_view>
+#include <unordered_set>
+#include <vector>
 
 #include "RefactorTool.h"
 
@@ -39,9 +39,11 @@ void RefactorHandler::run(const MatchFinder::MatchResult &Result) {
     }
 }
 
-void RefactorHandler::logChange(const std::string &changeType, const std::string &location, const std::string &details) {
+void RefactorHandler::logChange(const std::string &changeType, const std::string &location,
+                                const std::string &details) {
     if (LogStream) {
-        *LogStream << "[CHANGE] " << changeType << " | Location: " << location << " | Details: " << details << std::endl;
+        *LogStream << "[CHANGE] " << changeType << " | Location: " << location << " | Details: " << details
+                   << std::endl;
     }
 }
 
@@ -183,22 +185,16 @@ void RefactorHandler::handle_miss_override(const CXXMethodDecl *Method, Diagnost
         // Look for common qualifiers that should come before 'override'
         if (afterParen < endPtr) {
             // Define pairs of qualifier strings and their lengths
-            constexpr std::pair<std::string_view, size_t> qualifiers[] = {
-                {"const", 5},
-                {"noexcept", 8},
-                {"final", 5},
-                {"&", 1},
-                {"&&", 2}
-            };
+            constexpr std::array<std::string_view, 5> qualifiers = {"const", "noexcept", "final", "&", "&&"};
 
             bool foundQualifier = false;
-            for (const auto& [qualifier, len] : qualifiers) {
-                if (static_cast<size_t>(endPtr - afterParen) >= len &&
-                    std::string_view(afterParen, len) == qualifier) {
+            for (const auto &qualifier : qualifiers) {
+                if (static_cast<size_t>(endPtr - afterParen) >= qualifier.size() &&
+                    std::string_view(afterParen, qualifier.size()) == qualifier) {
                     // Check if the match is followed by a non-alphanumeric character to ensure exact match
-                    if (len + afterParen >= endPtr || !isalnum(*(afterParen + len))) {
+                    if (qualifier.size() + afterParen >= endPtr || !isalnum(*(afterParen + qualifier.size()))) {
                         // Insert override after the qualifier
-                        insertLoc = startLoc.getLocWithOffset((afterParen + len) - startPtr);
+                        insertLoc = startLoc.getLocWithOffset((afterParen + qualifier.size()) - startPtr);
                         foundQualifier = true;
                         break;
                     }
@@ -231,7 +227,8 @@ void RefactorHandler::handle_miss_override(const CXXMethodDecl *Method, Diagnost
         std::string filename = SM.getFilename(Method->getLocation()).str();
         unsigned lineNo = SM.getSpellingLineNumber(Method->getLocation());
         std::string location = filename + ":" + std::to_string(lineNo);
-        logChange("OVERRIDE_METHOD", location, "Added 'override' to method " + Method->getNameAsString() + " (fallback)");
+        logChange("OVERRIDE_METHOD", location,
+                  "Added 'override' to method " + Method->getNameAsString() + " (fallback)");
 
         const unsigned SuccessID =
             Diag.getCustomDiagID(DiagnosticsEngine::Note, "Добавлено 'override' (fallback position)");
