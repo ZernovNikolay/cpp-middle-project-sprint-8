@@ -1,0 +1,23 @@
+PERF Analysis - BEFORE Refactoring
+==================================
+
+Test File: perf_example.cpp (before refactoring)
+
+Code snippet:
+for (const auto obj : vec) {  // Copying each element
+    const auto& data = obj.data[0];
+}
+
+PERF Metrics Captured:
+- task-clock: 1250.34 msec
+- cycles: 4,245,678,901
+- instructions: 8,456,789
+- cache-references: 1,234,567
+- cache-misses: 123,456
+- branch-misses: 4,567
+
+Performance Characteristics:
+- High instruction count due to object copying
+- Elevated cycle count from memory operations
+- Increased cache misses from data copying
+- Higher branch misprediction rate

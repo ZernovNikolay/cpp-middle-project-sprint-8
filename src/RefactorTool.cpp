@@ -9,18 +9,16 @@
 #include "clang/Tooling/Tooling.h"
 #include "llvm/Support/CommandLine.h"
 
+#include <unordered_set>
+#include <string_view>
+#include <vector>
+#include <algorithm>
+
+#include "RefactorTool.h"
+
 using namespace clang;
 using namespace clang::ast_matchers;
 using namespace clang::tooling;
-
-static bool isWhitespace(char c) {
-    return c == ' ' || c == '\t' || c == '\n' || c == '\r';
-}
-
-
-#include <unordered_set>
-
-#include "RefactorTool.h"
 
 static llvm::cl::OptionCategory ToolCategory("refactor-tool options");
 
@@ -41,6 +39,12 @@ void RefactorHandler::run(const MatchFinder::MatchResult &Result) {
     }
 }
 
+void RefactorHandler::logChange(const std::string &changeType, const std::string &location, const std::string &details) {
+    if (LogStream) {
+        *LogStream << "[CHANGE] " << changeType << " | Location: " << location << " | Details: " << details << std::endl;
+    }
+}
+
 void RefactorHandler::handle_nv_dtor(const CXXDestructorDecl *Dtor, DiagnosticsEngine &Diag, SourceManager &SM) {
     if (!SM.isInMainFile(Dtor->getLocation())) {
         return;
@@ -57,62 +61,15 @@ void RefactorHandler::handle_nv_dtor(const CXXDestructorDecl *Dtor, DiagnosticsE
         return;
     }
 
-    // Check if any other class inherits from this class
     bool isBaseClass = false;
-    // We need to iterate through all the declarations in the translation unit to find if any class inherits from this one
-    // This is a simplified approach - in a real implementation we'd need to traverse all classes
-    // For now, we'll use a different approach: check if this class is used as a base class in any CXXRecordDecl
-
-    // Actually, let's use ASTContext to find all CXXRecordDecl nodes and check if any inherits from this class
-    // This is tricky to do in the handler. Let's try a different approach with matchers.
-
-    // For now, let's just check if the parent class has any base specifiers that indicate it inherits from something
-    // No, that's wrong. We need to check if OTHER classes inherit from THIS class.
-
-    // Let me try a different approach - look for all CXXRecordDecl nodes and check if any of them have this class as a base
-    // This is difficult to do in the current architecture. Let me revert to a better matcher approach.
-
-    // Actually, let me try to find a way to check if this class is used as a base class
-    // The parent class is the one that might be a base class for others
-    // We need to check if any other CXXRecordDecl inherits from Parent
-
-    // This is complex to do in the handler. Let me try to fix the original matcher properly.
-    // The original was: cxxDestructorDecl(unless(isVirtual()), hasParent(recordDecl(hasDescendant(cxxRecordDecl()))))
-    // This was wrong because hasDescendant(cxxRecordDecl()) means the class has another class defined inside it (nested class)
-
-    // What we need is to find classes that are base classes for others.
-    // Let me try to find if this specific class is used as a base class by looking for inheritance relationships
-
-    // For now, let's just process all non-virtual destructors and add virtual to all of them
-    // Actually, no, that's not correct. Only base classes need virtual destructors.
-
-    // Let me try to implement a proper check
-    // We need to check if any CXXRecordDecl has this Parent as a base
-    // This requires traversing the AST to find inheritance relationships
-
-    // For now, let me implement a basic check by looking for derived classes in the same translation unit
-    isBaseClass = false;
-    // This is difficult to implement properly without changing the architecture significantly
-    // Let me try a different approach by using AST matching more effectively
-
-    // Actually, let me restore the original approach but fix the matcher properly
-    // We need to match classes that are base classes for others
-    // This means we need to find classes that appear in base specifiers of other classes
-
-    // Let me try to use a more complex approach with AST matching
-    // The correct approach would be to match CXXRecordDecl that are used as base classes
-    // cxxRecordDecl(forEachDescendant(cxxBaseSpecifier(hasDeclaration(equalsNode(Parent)))))
-    // No, that's not right either
-
-    // Let me try: find CXXRecordDecl that have this Parent as a base
-    // This is getting complex. Let me try a simpler approach by using ASTContext to find derived classes
 
     // Check if this class is used as a base class by looking for inheritance in the AST
     ASTContext &Context = Dtor->getASTContext();
     for (auto *GlobalDecl : Context.getTranslationUnitDecl()->decls()) {
         if (auto *DerivedClass = dyn_cast<CXXRecordDecl>(GlobalDecl)) {
             // Only check classes that have definitions
-            if (!DerivedClass->hasDefinition()) continue;
+            if (!DerivedClass->hasDefinition())
+                continue;
 
             for (const auto &Base : DerivedClass->bases()) {
                 const CXXRecordDecl *BaseDecl = Base.getType()->getAsCXXRecordDecl();
@@ -122,11 +79,12 @@ void RefactorHandler::handle_nv_dtor(const CXXDestructorDecl *Dtor, DiagnosticsE
                 }
             }
         }
-        if (isBaseClass) break;
+        if (isBaseClass)
+            break;
     }
 
     if (!isBaseClass) {
-        return; // Only add virtual to destructors of classes that are base classes
+        return;  // Only add virtual to destructors of classes that are base classes
     }
 
     // Find the correct location to insert 'virtual' - before the '~' in destructor
@@ -141,6 +99,12 @@ void RefactorHandler::handle_nv_dtor(const CXXDestructorDecl *Dtor, DiagnosticsE
 
     Rewrite.InsertTextBefore(dtorLoc, "virtual ");
     virtualDtorLocations.insert(locationHash);
+
+    // Log the change
+    std::string filename = SM.getFilename(dtorLoc).str();
+    unsigned lineNo = SM.getSpellingLineNumber(dtorLoc);
+    std::string location = filename + ":" + std::to_string(lineNo);
+    logChange("VIRTUAL_DESTRUCTOR", location, "Added 'virtual' to destructor");
 
     const unsigned SuccessID = Diag.getCustomDiagID(DiagnosticsEngine::Note, "Добавлено 'virtual' перед деструктором");
     Diag.Report(dtorLoc, SuccessID);
@@ -211,26 +175,37 @@ void RefactorHandler::handle_miss_override(const CXXMethodDecl *Method, Diagnost
         // Check if there are qualifiers after the closing parenthesis (like const, noexcept, etc.)
         // Skip whitespace
         const char *afterParen = closingParen + 1;
-        while (afterParen < endPtr && (*afterParen == ' ' || *afterParen == '\t' || *afterParen == '\n' || *afterParen == '\r')) {
+        while (afterParen < endPtr &&
+               (*afterParen == ' ' || *afterParen == '\t' || *afterParen == '\n' || *afterParen == '\r')) {
             afterParen++;
         }
 
         // Look for common qualifiers that should come before 'override'
         if (afterParen < endPtr) {
-            // Check for common qualifiers like const, noexcept, final, etc.
-            if (strncmp(afterParen, "const", 5) == 0) {
-                // Insert override after 'const'
-                insertLoc = startLoc.getLocWithOffset((afterParen + 5) - startPtr);
-            } else if (strncmp(afterParen, "noexcept", 8) == 0) {
-                // Insert override after 'noexcept'
-                insertLoc = startLoc.getLocWithOffset((afterParen + 8) - startPtr);
-            } else if (strncmp(afterParen, "&", 1) == 0) {
-                // Insert override after '&'
-                insertLoc = startLoc.getLocWithOffset((afterParen + 1) - startPtr);
-            } else if (strncmp(afterParen, "&&", 2) == 0) {
-                // Insert override after '&&'
-                insertLoc = startLoc.getLocWithOffset((afterParen + 2) - startPtr);
-            } else {
+            // Define pairs of qualifier strings and their lengths
+            constexpr std::pair<std::string_view, size_t> qualifiers[] = {
+                {"const", 5},
+                {"noexcept", 8},
+                {"final", 5},
+                {"&", 1},
+                {"&&", 2}
+            };
+
+            bool foundQualifier = false;
+            for (const auto& [qualifier, len] : qualifiers) {
+                if (static_cast<size_t>(endPtr - afterParen) >= len &&
+                    std::string_view(afterParen, len) == qualifier) {
+                    // Check if the match is followed by a non-alphanumeric character to ensure exact match
+                    if (len + afterParen >= endPtr || !isalnum(*(afterParen + len))) {
+                        // Insert override after the qualifier
+                        insertLoc = startLoc.getLocWithOffset((afterParen + len) - startPtr);
+                        foundQualifier = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!foundQualifier) {
                 // Insert override right after the closing parenthesis
                 insertLoc = startLoc.getLocWithOffset(closingParen - startPtr + 1);
             }
@@ -239,12 +214,24 @@ void RefactorHandler::handle_miss_override(const CXXMethodDecl *Method, Diagnost
         // Insert 'override' at the calculated location
         Rewrite.InsertTextAfter(insertLoc, " override");
 
+        // Log the change
+        std::string filename = SM.getFilename(Method->getLocation()).str();
+        unsigned lineNo = SM.getSpellingLineNumber(Method->getLocation());
+        std::string location = filename + ":" + std::to_string(lineNo);
+        logChange("OVERRIDE_METHOD", location, "Added 'override' to method " + Method->getNameAsString());
+
         const unsigned SuccessID =
             Diag.getCustomDiagID(DiagnosticsEngine::Note, "Добавлено 'override' после закрывающей скобки");
         Diag.Report(insertLoc, SuccessID);
     } else {
         // Fallback: insert at the end of the method's source range
         Rewrite.InsertTextBefore(endLoc, " override");
+
+        // Log the change
+        std::string filename = SM.getFilename(Method->getLocation()).str();
+        unsigned lineNo = SM.getSpellingLineNumber(Method->getLocation());
+        std::string location = filename + ":" + std::to_string(lineNo);
+        logChange("OVERRIDE_METHOD", location, "Added 'override' to method " + Method->getNameAsString() + " (fallback)");
 
         const unsigned SuccessID =
             Diag.getCustomDiagID(DiagnosticsEngine::Note, "Добавлено 'override' (fallback position)");
@@ -284,6 +271,12 @@ void RefactorHandler::handle_crange_for(const VarDecl *LoopVar, DiagnosticsEngin
     SourceLocation insertLoc = Lexer::getLocForEndOfToken(TL.getEndLoc(), 0, SM, LangOptions());
     Rewrite.InsertTextAfter(insertLoc, "&");
 
+    // Log the change
+    std::string filename = SM.getFilename(LoopVar->getLocation()).str();
+    unsigned lineNo = SM.getSpellingLineNumber(LoopVar->getLocation());
+    std::string location = filename + ":" + std::to_string(lineNo);
+    logChange("RANGE_FOR_REFERENCE", location, "Added '&' to variable " + LoopVar->getNameAsString());
+
     const unsigned SuccessID = Diag.getCustomDiagID(DiagnosticsEngine::Note, "Добавлено '&' после типа");
     Diag.Report(insertLoc, SuccessID);
 }
@@ -293,25 +286,21 @@ auto NvDtorMatcher() {
     // This is complex to do with a single matcher, so we'll match all non-virtual destructors
     // and check in the handler if the class has derived classes
     return traverse(clang::TK_IgnoreUnlessSpelledInSource,
-                    cxxDestructorDecl(
-                        unless(isVirtual())
-                    ).bind("nonVirtualDtor"));
+                    cxxDestructorDecl(unless(isVirtual())).bind("nonVirtualDtor"));
 }
 
 auto NoOverrideMatcher() {
     return traverse(clang::TK_IgnoreUnlessSpelledInSource,
-                    cxxMethodDecl(
-                        isOverride(),  // Method overrides a base method
-                        unless(hasAttr(clang::attr::Override))  // But doesn't have override keyword
-                    ).bind("missingOverride"));
+                    cxxMethodDecl(isOverride(),                           // Method overrides a base method
+                                  unless(hasAttr(clang::attr::Override))  // But doesn't have override keyword
+                                  )
+                        .bind("missingOverride"));
 }
 
 auto NoRefConstVarInRangeLoopMatcher() {
     return traverse(clang::TK_IgnoreUnlessSpelledInSource,
-                    varDecl(hasAncestor(cxxForRangeStmt()),
-                            hasType(qualType(isConstQualified())),
-                            unless(hasType(referenceType())),
-                            unless(hasType(qualType(builtinType()))))
+                    varDecl(hasAncestor(cxxForRangeStmt()), hasType(qualType(isConstQualified())),
+                            unless(hasType(referenceType())), unless(hasType(qualType(builtinType()))))
                         .bind("loopVar"));
 }
 

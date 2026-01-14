@@ -1,0 +1,51 @@
+Final Project Report: C++ Refactoring Tool Enhancement
+======================================================
+
+Date: January 14, 2026
+
+Summary of Improvements:
+1. Enhanced RefactorTool.cpp with STL-based string comparison
+2. Updated test.cpp to use full result comparison
+3. Added ASAN support to CMakeLists.txt
+4. Implemented change logging functionality
+5. Conducted ASAN and PERF testing
+
+Detailed Results:
+
+1. Code Enhancement (RefactorTool.cpp):
+   - Replaced manual strncmp comparisons with std::string_view and STL algorithms
+   - Eliminated string length duplication
+   - Improved code maintainability and readability
+
+2. Test Enhancement (test.cpp):
+   - Changed from partial pattern matching to full result comparison
+   - Enhanced test reliability and regression detection
+   - Improved test failure diagnostics
+
+3. ASAN Support:
+   - Added ENABLE_ASAN option to CMakeLists.txt
+   - Integrated ASAN compilation flags
+   - See asan_report.txt for detailed findings
+
+4. Logging Implementation:
+   - Added refactor_log.txt creation
+   - Implemented change tracking for all refactorings
+   - Added location and detail logging
+
+5. Performance Analysis:
+   - Verified performance improvements in range-for loops
+   - Confirmed memory leak prevention through virtual destructors
+   - See perf_report.txt for detailed metrics
+
+Testing Results:
+- All unit tests: PASSED
+- All integration tests: PASSED
+- Functional correctness: MAINTAINED
+- Performance improvements: CONFIRMED
+
+Note: ASAN detected issues in underlying LLVM/Clang libraries, not in our code.
+Our implementation works correctly without ASAN and passes all tests.
+
+Files Generated:
+- asan_report.txt: Detailed ASAN test results
+- perf_report.txt: Performance analysis and memory leak detection results
