@@ -9,11 +9,27 @@
 #include "llvm/Support/CommandLine.h"
 
 #include <unordered_set>
+#include <fstream>
 
 class RefactorHandler : public clang::ast_matchers::MatchFinder::MatchCallback {
 public:
-    explicit RefactorHandler(clang::Rewriter &Rewrite) : Rewrite(Rewrite) {}
-    // Метод run вызывается для каждого совпадения с матчем. 
+    explicit RefactorHandler(clang::Rewriter &Rewrite) : Rewrite(Rewrite), LogStream(nullptr) {
+        // Initialize log file
+        LogFile.open("refactor_log.txt", std::ios::out | std::ios::app);
+        if (LogFile.is_open()) {
+            LogStream = &LogFile;
+        }
+    }
+
+    ~RefactorHandler() {
+        if (LogStream) {
+            LogStream->flush();
+        }
+        // Don't close LogFile explicitly to avoid issues with ASAN
+        // The file will be closed when the object is destroyed
+    }
+
+    // Метод run вызывается для каждого совпадения с матчем.
     // Мы проверяем тип совпадения по bind-именам и применяем рефакторинг.
     virtual void run(const clang::ast_matchers::MatchFinder::MatchResult &Result) override;
 
@@ -33,9 +49,15 @@ private:
     void handle_crange_for(const    clang::VarDecl *LoopVar,
                                     clang::DiagnosticsEngine &Diag,
                                     clang::SourceManager &SM);
+
+    // Логирование изменений
+    void logChange(const std::string &changeType, const std::string &location, const std::string &details);
+
 private:
     clang::Rewriter &Rewrite;
     std::unordered_set<unsigned> virtualDtorLocations; // Для хранения позиций деструкторов, к которым уже добавлен virtual
+    std::ofstream LogFile;
+    std::ostream *LogStream;
 };
 
 class ComplexConsumer : public clang::ASTConsumer {

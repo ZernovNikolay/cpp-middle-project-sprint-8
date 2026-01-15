@@ -36,6 +36,12 @@ target_include_directories(
 
 target_link_libraries(refactor_tool PRIVATE clangTooling clangBasic clangASTMatchers)
 
+# Enable Address Sanitizer for debug builds
+if(ENABLE_ASAN)
+    target_compile_options(refactor_tool PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+    target_link_options(refactor_tool PRIVATE -fsanitize=address)
+endif()
+
 
 # # CONFIGURE THE PLUGIN LIBRARIES
 # # ==============================

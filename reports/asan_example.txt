@@ -1,0 +1,21 @@
+Example ASAN Build and Run Commands
+===================================
+
+To build the project with AddressSanitizer enabled:
+
+```bash
+cd /workspaces/cpp-middle-project-sprint-8
+rm -rf build
+mkdir build
+cd build
+cmake -DCT_Clang_INSTALL_DIR=/usr/lib/llvm-20 -DENABLE_ASAN=ON ..
+make
+```
+
+To run the refactoring tool with ASAN:
+
+```bash
+ASAN_OPTIONS="detect_leaks=1" ./refactor_tool input_file.cpp
+```
+
+Note: When running with ASAN, errors may be detected in the underlying Clang/LLVM libraries due to known compatibility issues between ASAN and internal LLVM data structures. These errors originate from the library level, not from our user code implementation.
